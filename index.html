@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>VNETIX Field Service – Track Your Technician</title>
+
+  <!-- Leaflet map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:   #0f2340;
+      --blue:   #1a3a5c;
+      --accent: #e85d26;
+      --green:  #16a34a;
+      --amber:  #d97706;
+      --text:   #1e293b;
+      --muted:  #64748b;
+      --border: #e2e8f0;
+      --card:   #ffffff;
+      --bg:     #f1f5f9;
+      --radius: 12px;
+    }
+
+    html, body { height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+
+    /* ── Header ───────────────────────────────────────────────────── */
+    .header {
+      background: var(--navy);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,.3);
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+    }
+    .header-logo {
+      width: 38px; height: 38px;
+      background: var(--accent);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; color: #fff; font-weight: 800; flex-shrink: 0;
+    }
+    .header-title { color: #fff; font-size: 15px; font-weight: 700; line-height: 1.2; }
+    .header-sub   { color: #94a3b8; font-size: 11px; margin-top: 1px; }
+
+    /* ── Status banner ────────────────────────────────────────────── */
+    .status-bar {
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      transition: background .4s;
+    }
+    .status-bar.traveling  { background: #dbeafe; color: #1d4ed8; }
+    .status-bar.arrived    { background: #dcfce7; color: #15803d; }
+    .status-bar.loading    { background: #fef9c3; color: #92400e; }
+    .status-bar.expired    { background: #fee2e2; color: #b91c1c; }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
+    }
+    .status-bar.traveling  .status-dot { background: #2563eb; animation: pulse 1.5s infinite; }
+    .status-bar.arrived    .status-dot { background: #16a34a; }
+    .status-bar.loading    .status-dot { background: #d97706; animation: pulse 1.5s infinite; }
+    .status-bar.expired    .status-dot { background: #dc2626; }
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50%       { transform: scale(1.3); opacity: .7; }
+    }
+    .status-right { margin-left: auto; font-size: 11px; font-weight: 400; color: inherit; opacity: .8; }
+
+    /* ── Map ──────────────────────────────────────────────────────── */
+    #map {
+      width: 100%;
+      height: calc(100vh - 56px - 42px - 140px);
+      min-height: 260px;
+      max-height: 520px;
+    }
+
+    /* ── Info cards ───────────────────────────────────────────────── */
+    .cards {
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    @media (min-width: 480px) { .cards { grid-template-columns: repeat(3, 1fr); } }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .card-label { font-size: 10px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); }
+    .card-value { font-size: 15px; font-weight: 700; color: var(--text); }
+    .card-value.green { color: var(--green); }
+    .card-value.blue  { color: #2563eb; }
+    .card-value.amber { color: var(--amber); }
+    .card-value.muted { color: var(--muted); font-weight: 500; font-size: 13px; }
+
+    /* ── Arrived overlay ──────────────────────────────────────────── */
+    .overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(15,35,64,.85);
+      z-index: 2000;
+      align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    .overlay.show { display: flex; }
+    .overlay-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 36px 28px;
+      text-align: center;
+      max-width: 340px;
+      width: 100%;
+      box-shadow: 0 24px 60px rgba(0,0,0,.35);
+    }
+    .overlay-icon { font-size: 56px; margin-bottom: 16px; }
+    .overlay-title { font-size: 22px; font-weight: 800; color: var(--navy); margin-bottom: 8px; }
+    .overlay-text  { font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .overlay-close {
+      margin-top: 24px;
+      background: var(--green);
+      color: #fff;
+      border: none; border-radius: 8px;
+      padding: 12px 28px;
+      font-size: 14px; font-weight: 600;
+      cursor: pointer; width: 100%;
+    }
+
+    /* ── Footer ───────────────────────────────────────────────────── */
+    .footer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--muted);
+      padding: 10px 16px 18px;
+    }
+
+    /* ── Leaflet tech marker ──────────────────────────────────────── */
+    @keyframes ripple {
+      0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.6); }
+      70%  { box-shadow: 0 0 0 14px rgba(37,99,235,0); }
+      100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+    }
+    .tech-dot {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: #2563eb; border: 3px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+      animation: ripple 2s ease-out infinite;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-logo">V</div>
+  <div>
+    <div class="header-title">VNETIX Field Service</div>
+    <div class="header-sub">Live Technician Tracking</div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div class="status-bar loading" id="statusBar">
+  <div class="status-dot"></div>
+  <span id="statusText">Connecting to tracking service…</span>
+  <span class="status-right" id="statusRight"></span>
+</div>
+
+<!-- Map -->
+<div id="map"></div>
+
+<!-- Info cards -->
+<div class="cards">
+  <div class="card">
+    <div class="card-label">Status</div>
+    <div class="card-value" id="cardStatus">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Last Updated</div>
+    <div class="card-value muted" id="cardUpdated">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Work Order</div>
+    <div class="card-value muted" id="cardWO">—</div>
+  </div>
+</div>
+
+<div class="footer">
+  Location updates every 30 seconds &nbsp;·&nbsp; Powered by VNETIX
+</div>
+
+<!-- Arrived / Checked-in overlay -->
+<div class="overlay" id="arrivedOverlay">
+  <div class="overlay-card">
+    <div class="overlay-icon">✅</div>
+    <div class="overlay-title">Technician Has Arrived</div>
+    <div class="overlay-text">
+      Your technician has checked in at the service location.<br/>
+      Live tracking has ended for this visit.
+    </div>
+    <button class="overlay-close" onclick="document.getElementById('arrivedOverlay').classList.remove('show')">
+      Got it
+    </button>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  CONFIG — set these two values for your environment
+// ═══════════════════════════════════════════════════════════════
+const CONFIG = {
+  // Your Azure Function URL (set after you deploy the function)
+  // Format: https://<your-app>.azurewebsites.net/api/GetVisitLocation
+  azureFunctionUrl: "https://YOUR_AZURE_FUNCTION.azurewebsites.net/api/GetVisitLocation",
+
+  // How often to poll (milliseconds) — 30 seconds
+  pollIntervalMs: 30000,
+
+  // Default map center (shown before first location arrives)
+  defaultCenter: [17.6868, 83.2185],
+  defaultZoom: 13
+};
+
+// ═══════════════════════════════════════════════════════════════
+//  BOOT — read token from URL  ?token=XXXX
+// ═══════════════════════════════════════════════════════════════
+const params = new URLSearchParams(window.location.search);
+const TOKEN  = params.get("token") || "";
+
+if (!TOKEN) {
+  showFatalError("Invalid tracking link. Please use the link sent to you by email.");
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAP SETUP
+// ═══════════════════════════════════════════════════════════════
+const map = L.map("map", {
+  center: CONFIG.defaultCenter,
+  zoom:   CONFIG.defaultZoom,
+  zoomControl: true,
+  scrollWheelZoom: true
+});
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  attribution: "&copy; OpenStreetMap contributors",
+  maxZoom: 19
+}).addTo(map);
+
+let techMarker   = null;
+let mapCentred   = false;   // pan to first position once only
+let pollTimer    = null;
+let lastLat      = null;
+let lastLng      = null;
+let checkedIn    = false;
+
+// Tech dot icon
+const techIcon = L.divIcon({
+  className: "",
+  html: '<div class="tech-dot"></div>',
+  iconSize: [18, 18],
+  iconAnchor: [9, 9]
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  FETCH location from Azure Function
+// ═══════════════════════════════════════════════════════════════
+async function fetchLocation() {
+  if (!TOKEN || checkedIn) return;
+
+  try {
+    const url = `${CONFIG.azureFunctionUrl}?token=${encodeURIComponent(TOKEN)}`;
+    const res  = await fetch(url, { cache: "no-store" });
+
+    if (!res.ok) {
+      // 404 = token not found / expired
+      if (res.status === 404) {
+        showFatalError("This tracking link has expired or is no longer valid.");
+        stopPolling();
+        return;
+      }
+      setStatus("loading", "Waiting for technician to start travelling…");
+      return;
+    }
+
+    const data = await res.json();
+
+    // data shape expected from Azure Function:
+    // {
+    //   latitude:      number | null,
+    //   longitude:     number | null,
+    //   checkedIn:     boolean,
+    //   workOrderName: string,
+    //   lastUpdated:   string (ISO)
+    // }
+
+    updateUI(data);
+
+  } catch (err) {
+    console.warn("Tracking fetch error:", err);
+    setStatus("loading", "Connection issue — retrying…");
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UPDATE UI from response data
+// ═══════════════════════════════════════════════════════════════
+function updateUI(data) {
+  // Work Order name
+  if (data.workOrderName) {
+    document.getElementById("cardWO").textContent = data.workOrderName;
+  }
+
+  // Last updated time
+  if (data.lastUpdated) {
+    const t = new Date(data.lastUpdated);
+    document.getElementById("cardUpdated").textContent = t.toLocaleTimeString("en-IN", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+    });
+  }
+
+  // Checked-in state
+  if (data.checkedIn) {
+    checkedIn = true;
+    stopPolling();
+    setStatus("arrived", "Technician has arrived and checked in");
+    document.getElementById("cardStatus").textContent = "Checked In";
+    document.getElementById("cardStatus").className   = "card-value green";
+    // Show arrived overlay (with slight delay so map updates first)
+    setTimeout(() => {
+      document.getElementById("arrivedOverlay").classList.add("show");
+    }, 800);
+    return;
+  }
+
+  // No coordinates yet (technician hasn't started moving)
+  if (!data.latitude || !data.longitude ||
+      data.latitude === 0 || data.longitude === 0) {
+    setStatus("loading", "Waiting for technician to start travelling…");
+    document.getElementById("cardStatus").textContent = "En Route (starting…)";
+    document.getElementById("cardStatus").className   = "card-value amber";
+    return;
+  }
+
+  // We have real coordinates — update map
+  const lat = parseFloat(data.latitude);
+  const lng = parseFloat(data.longitude);
+
+  if (isNaN(lat) || isNaN(lng)) return;
+
+  lastLat = lat;
+  lastLng = lng;
+
+  // Place / move the technician marker
+  if (techMarker) {
+    techMarker.setLatLng([lat, lng]);
+  } else {
+    techMarker = L.marker([lat, lng], { icon: techIcon, zIndexOffset: 1000 })
+      .addTo(map)
+      .bindPopup("<b>Technician Location</b><br/>Live position");
+  }
+
+  // Pan to first fix
+  if (!mapCentred) {
+    map.setView([lat, lng], 15, { animate: true });
+    mapCentred = true;
+  } else {
+    map.panTo([lat, lng], { animate: true, duration: 0.8 });
+  }
+
+  setStatus("traveling", "Technician is on the way to you");
+  document.getElementById("cardStatus").textContent = "En Route";
+  document.getElementById("cardStatus").className   = "card-value blue";
+  document.getElementById("statusRight").textContent =
+    lat.toFixed(5) + ", " + lng.toFixed(5);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+function setStatus(type, text) {
+  const bar  = document.getElementById("statusBar");
+  const span = document.getElementById("statusText");
+  bar.className  = "status-bar " + type;
+  span.textContent = text;
+}
+
+function startPolling() {
+  fetchLocation();   // immediate first call
+  pollTimer = setInterval(fetchLocation, CONFIG.pollIntervalMs);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+function showFatalError(msg) {
+  stopPolling();
+  setStatus("expired", msg);
+  document.getElementById("cardStatus").textContent = "Link Expired";
+  document.getElementById("cardStatus").className   = "card-value";
+  document.getElementById("cardStatus").style.color = "#dc2626";
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════════════════
+if (TOKEN) {
+  startPolling();
+}
+
+// Pause polling when page is hidden (mobile background), resume on foreground
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && TOKEN && !checkedIn) {
+    stopPolling();
+    startPolling(); // restart with immediate fetch
+  } else if (document.visibilityState === "hidden") {
+    stopPolling();
+  }
+});
+</script>
+</body>
+</html>
