@@ -224,10 +224,7 @@
 //  CONFIG — set these two values for your environment
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
-  // Your Azure Function URL (set after you deploy the function)
-  // Format: https://<your-app>.azurewebsites.net/api/GetVisitLocation
-  azureFunctionUrl: "https://YOUR_AZURE_FUNCTION.azurewebsites.net/api/GetVisitLocation",
-
+  azureFunctionUrl: "https://fieldservicetracking-hbgwhvehhkhfdzhq.southindia-01.azurewebsites.net/api/GetTracking",
   // How often to poll (milliseconds) — 30 seconds
   pollIntervalMs: 30000,
 
@@ -334,7 +331,8 @@ function updateUI(data) {
   }
 
   // Checked-in state
-  if (data.checkedIn) {
+  // Status = Completed
+if (data.Status == 351580003) { 
     checkedIn = true;
     stopPolling();
     setStatus("arrived", "Technician has arrived and checked in");
@@ -348,17 +346,17 @@ function updateUI(data) {
   }
 
   // No coordinates yet (technician hasn't started moving)
-  if (!data.latitude || !data.longitude ||
-      data.latitude === 0 || data.longitude === 0) {
-    setStatus("loading", "Waiting for technician to start travelling…");
-    document.getElementById("cardStatus").textContent = "En Route (starting…)";
-    document.getElementById("cardStatus").className   = "card-value amber";
-    return;
-  }
+ if (!data.Latitude || !data.Longitude ||
+    data.Latitude === 0 || data.Longitude === 0) {
 
+    setStatus("loading", "Waiting for technician to start travelling...");
+    document.getElementById("cardStatus").textContent = "En Route (starting...)";
+    document.getElementById("cardStatus").className = "card-value amber";
+    return;
+}
   // We have real coordinates — update map
-  const lat = parseFloat(data.latitude);
-  const lng = parseFloat(data.longitude);
+  const lat = parseFloat(data.Latitude);
+const lng = parseFloat(data.Longitude);
 
   if (isNaN(lat) || isNaN(lng)) return;
 
