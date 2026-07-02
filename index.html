@@ -10,7 +10,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    /* ── Reset & base ─────────────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
@@ -29,7 +28,7 @@
 
     html, body { height: 100%; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
 
-    /* ── Header ───────────────────────────────────────────────────── */
+    /* Header */
     .header {
       background: var(--navy);
       padding: 14px 20px;
@@ -51,7 +50,7 @@
     .header-title { color: #fff; font-size: 15px; font-weight: 700; line-height: 1.2; }
     .header-sub   { color: #94a3b8; font-size: 11px; margin-top: 1px; }
 
-    /* ── Status banner ────────────────────────────────────────────── */
+    /* Status bar */
     .status-bar {
       padding: 10px 20px;
       display: flex;
@@ -61,24 +60,28 @@
       font-weight: 600;
       transition: background .4s;
     }
-    .status-bar.traveling  { background: #dbeafe; color: #1d4ed8; }
-    .status-bar.arrived    { background: #dcfce7; color: #15803d; }
-    .status-bar.loading    { background: #fef9c3; color: #92400e; }
-    .status-bar.expired    { background: #fee2e2; color: #b91c1c; }
-    .status-dot {
-      width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
-    }
-    .status-bar.traveling  .status-dot { background: #2563eb; animation: pulse 1.5s infinite; }
-    .status-bar.arrived    .status-dot { background: #16a34a; }
-    .status-bar.loading    .status-dot { background: #d97706; animation: pulse 1.5s infinite; }
-    .status-bar.expired    .status-dot { background: #dc2626; }
+    .status-bar.traveling   { background: #dbeafe; color: #1d4ed8; }
+    .status-bar.arrived     { background: #dcfce7; color: #15803d; }
+    .status-bar.completed   { background: #f0fdf4; color: #15803d; }
+    .status-bar.loading     { background: #fef9c3; color: #92400e; }
+    .status-bar.unavailable { background: #f1f5f9; color: #64748b; }
+    .status-bar.expired     { background: #fee2e2; color: #b91c1c; }
+
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .status-bar.traveling   .status-dot { background: #2563eb; animation: pulse 1.5s infinite; }
+    .status-bar.arrived     .status-dot { background: #16a34a; }
+    .status-bar.completed   .status-dot { background: #16a34a; }
+    .status-bar.loading     .status-dot { background: #d97706; animation: pulse 1.5s infinite; }
+    .status-bar.unavailable .status-dot { background: #94a3b8; }
+    .status-bar.expired     .status-dot { background: #dc2626; }
+
     @keyframes pulse {
       0%, 100% { transform: scale(1); opacity: 1; }
       50%       { transform: scale(1.3); opacity: .7; }
     }
     .status-right { margin-left: auto; font-size: 11px; font-weight: 400; color: inherit; opacity: .8; }
 
-    /* ── Map ──────────────────────────────────────────────────────── */
+    /* Map */
     #map {
       width: 100%;
       height: calc(100vh - 56px - 42px - 140px);
@@ -86,7 +89,7 @@
       max-height: 520px;
     }
 
-    /* ── Info cards ───────────────────────────────────────────────── */
+    /* Info cards */
     .cards {
       padding: 14px 16px;
       display: grid;
@@ -108,8 +111,34 @@
     .card-value.blue  { color: #2563eb; }
     .card-value.amber { color: var(--amber); }
     .card-value.muted { color: var(--muted); font-weight: 500; font-size: 13px; }
+    .card-value.red   { color: #dc2626; }
 
-    /* ── Arrived overlay ──────────────────────────────────────────── */
+    /* Full-page message screen (replaces map for non-travelling states) */
+    .msg-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 40px 24px;
+      min-height: calc(100vh - 56px - 42px - 140px);
+    }
+    .msg-screen.show { display: flex; }
+    .msg-icon  { font-size: 72px; margin-bottom: 20px; }
+    .msg-title { font-size: 22px; font-weight: 800; color: var(--navy); margin-bottom: 10px; }
+    .msg-text  { font-size: 15px; color: var(--muted); line-height: 1.7; max-width: 320px; }
+    .msg-badge {
+      margin-top: 20px;
+      display: inline-block;
+      padding: 8px 20px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .msg-badge.green { background: #dcfce7; color: #15803d; }
+    .msg-badge.grey  { background: #e2e8f0; color: #475569; }
+
+    /* Arrived overlay (shown on top of map when technician arrives mid-session) */
     .overlay {
       display: none;
       position: fixed; inset: 0;
@@ -128,7 +157,7 @@
       width: 100%;
       box-shadow: 0 24px 60px rgba(0,0,0,.35);
     }
-    .overlay-icon { font-size: 56px; margin-bottom: 16px; }
+    .overlay-icon  { font-size: 56px; margin-bottom: 16px; }
     .overlay-title { font-size: 22px; font-weight: 800; color: var(--navy); margin-bottom: 8px; }
     .overlay-text  { font-size: 14px; color: var(--muted); line-height: 1.6; }
     .overlay-close {
@@ -141,7 +170,7 @@
       cursor: pointer; width: 100%;
     }
 
-    /* ── Footer ───────────────────────────────────────────────────── */
+    /* Footer */
     .footer {
       text-align: center;
       font-size: 11px;
@@ -149,7 +178,7 @@
       padding: 10px 16px 18px;
     }
 
-    /* ── Leaflet tech marker ──────────────────────────────────────── */
+    /* Leaflet tech marker */
     @keyframes ripple {
       0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.6); }
       70%  { box-shadow: 0 0 0 14px rgba(37,99,235,0); }
@@ -181,8 +210,16 @@
   <span class="status-right" id="statusRight"></span>
 </div>
 
-<!-- Map -->
+<!-- Map (visible only when Travelling) -->
 <div id="map"></div>
+
+<!-- Full-page message screen (shown instead of map for non-travelling states) -->
+<div class="msg-screen" id="msgScreen">
+  <div class="msg-icon"  id="msgIcon">⏳</div>
+  <div class="msg-title" id="msgTitle">Please wait</div>
+  <div class="msg-text"  id="msgText"></div>
+  <span class="msg-badge grey" id="msgBadge" style="display:none"></span>
+</div>
 
 <!-- Info cards -->
 <div class="cards">
@@ -201,14 +238,14 @@
 </div>
 
 <div class="footer">
-  Location updates every 30 seconds &nbsp;·&nbsp; Powered by VNETIX
+  Powered by VNETIX Field Service
 </div>
 
-<!-- Arrived / Checked-in overlay -->
+<!-- Arrived overlay (shown on top of live map when tech arrives while customer is watching) -->
 <div class="overlay" id="arrivedOverlay">
   <div class="overlay-card">
     <div class="overlay-icon">✅</div>
-    <div class="overlay-title">Technician Has Arrived</div>
+    <div class="overlay-title">Technician Has Arrived!</div>
     <div class="overlay-text">
       Your technician has checked in at the service location.<br/>
       Live tracking has ended for this visit.
@@ -221,30 +258,33 @@
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-//  CONFIG — set these two values for your environment
+//  CONFIG
 // ═══════════════════════════════════════════════════════════════
 const CONFIG = {
   azureFunctionUrl: "https://fieldservicetracking-hbgwhvehhkhfdzhq.southindia-01.azurewebsites.net/api/GetTracking",
-  // How often to poll (milliseconds) — 30 seconds
   pollIntervalMs: 30000,
-
-  // Default map center (shown before first location arrives)
   defaultCenter: [17.6868, 83.2185],
   defaultZoom: 13
 };
 
+// ── Status option-set values ──────────────────────────────────
+const STATUS = {
+  TRAVELLING:        1,
+  INACTIVE:          2,
+  IN_PROGRESS:       351580002,   // technician already at site
+  REVISIT_REQUESTED: 351580001,
+  COMPLETED:         351580003,
+  NONE:              477730001
+};
+
 // ═══════════════════════════════════════════════════════════════
-//  BOOT — read token from URL  ?token=XXXX
+//  READ TOKEN FROM URL
 // ═══════════════════════════════════════════════════════════════
 const params = new URLSearchParams(window.location.search);
 const TOKEN  = params.get("token") || "";
 
-if (!TOKEN) {
-  showFatalError("Invalid tracking link. Please use the link sent to you by email.");
-}
-
 // ═══════════════════════════════════════════════════════════════
-//  MAP SETUP
+//  MAP SETUP (always initialise — hidden until Travelling)
 // ═══════════════════════════════════════════════════════════════
 const map = L.map("map", {
   center: CONFIG.defaultCenter,
@@ -258,14 +298,6 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19
 }).addTo(map);
 
-let techMarker   = null;
-let mapCentred   = false;   // pan to first position once only
-let pollTimer    = null;
-let lastLat      = null;
-let lastLng      = null;
-let checkedIn    = false;
-
-// Tech dot icon
 const techIcon = L.divIcon({
   className: "",
   html: '<div class="tech-dot"></div>',
@@ -273,39 +305,60 @@ const techIcon = L.divIcon({
   iconAnchor: [9, 9]
 });
 
+let techMarker  = null;
+let mapCentred  = false;
+let pollTimer   = null;
+let finalised   = false;   // true once we reach a terminal state (no more polling)
+let wasLive     = false;   // true if the customer saw live tracking before tech arrived
+
 // ═══════════════════════════════════════════════════════════════
-//  FETCH location from Azure Function
+//  SHOW / HIDE MAP vs MESSAGE SCREEN
+// ═══════════════════════════════════════════════════════════════
+function showMap() {
+  document.getElementById("map").style.display       = "";
+  document.getElementById("msgScreen").classList.remove("show");
+  setTimeout(() => { if (map) map.invalidateSize(); }, 150);
+}
+
+function showMessage(icon, title, text, badgeText, badgeClass) {
+  document.getElementById("map").style.display = "none";
+  const ms = document.getElementById("msgScreen");
+  ms.classList.add("show");
+  document.getElementById("msgIcon").textContent  = icon;
+  document.getElementById("msgTitle").textContent = title;
+  document.getElementById("msgText").textContent  = text;
+  const badge = document.getElementById("msgBadge");
+  if (badgeText) {
+    badge.textContent  = badgeText;
+    badge.className    = "msg-badge " + (badgeClass || "grey");
+    badge.style.display = "inline-block";
+  } else {
+    badge.style.display = "none";
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  FETCH FROM AZURE FUNCTION
 // ═══════════════════════════════════════════════════════════════
 async function fetchLocation() {
-  if (!TOKEN || checkedIn) return;
+  if (!TOKEN || finalised) return;
 
   try {
-    const url = `${CONFIG.azureFunctionUrl}?token=${encodeURIComponent(TOKEN)}`;
+    const url = CONFIG.azureFunctionUrl + "?token=" + encodeURIComponent(TOKEN);
     const res  = await fetch(url, { cache: "no-store" });
 
     if (!res.ok) {
-      // 404 = token not found / expired
       if (res.status === 404) {
-        showFatalError("This tracking link has expired or is no longer valid.");
-        stopPolling();
+        handleUnavailable();
         return;
       }
-      setStatus("loading", "Waiting for technician to start travelling…");
+      // Transient error — keep polling
+      setStatus("loading", "Retrying connection…");
       return;
     }
 
     const data = await res.json();
-
-    // data shape expected from Azure Function:
-    // {
-    //   latitude:      number | null,
-    //   longitude:     number | null,
-    //   checkedIn:     boolean,
-    //   workOrderName: string,
-    //   lastUpdated:   string (ISO)
-    // }
-
-    updateUI(data);
+    processData(data);
 
   } catch (err) {
     console.warn("Tracking fetch error:", err);
@@ -314,56 +367,139 @@ async function fetchLocation() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  UPDATE UI from response data
+//  PROCESS DATA — main status switch
+//
+//  Azure Function returns:
+//    { Latitude, Longitude, Status, TravelDistance, workOrderName, lastUpdated }
+//
+//  Status values:
+//    1           → Travelling    → show live map
+//    351580002   → In Progress   → technician at site / working
+//    351580003   → Completed     → visit fully done
+//    351580001   → Revisit Req.  → treated as completed/ended
+//    2           → Inactive      → not started yet / N/A
+//    477730001   → None          → N/A
 // ═══════════════════════════════════════════════════════════════
-function updateUI(data) {
-  // Work Order name
+function processData(data) {
+  const status = parseInt(data.Status, 10);
+
+  // Update work order name and timestamp if present
   if (data.workOrderName) {
     document.getElementById("cardWO").textContent = data.workOrderName;
   }
-
-  // Last updated time
   if (data.lastUpdated) {
     const t = new Date(data.lastUpdated);
     document.getElementById("cardUpdated").textContent = t.toLocaleTimeString("en-IN", {
       hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
     });
+  } else {
+    // Use current time as "last updated"
+    document.getElementById("cardUpdated").textContent = new Date().toLocaleTimeString("en-IN", {
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+    });
   }
 
-  // Checked-in state
-  // Status = Completed
-if (data.Status == 351580003) { 
-    checkedIn = true;
+  // ── TRAVELLING (Status = 1): show live map ───────────────────
+  if (status === STATUS.TRAVELLING) {
+    wasLive = true;
+    handleTravelling(data);
+    return;
+  }
+
+  // ── IN PROGRESS (351580002): tech has arrived and is working ─
+  if (status === STATUS.IN_PROGRESS) {
     stopPolling();
-    setStatus("arrived", "Technician has arrived and checked in");
-    document.getElementById("cardStatus").textContent = "Checked In";
-    document.getElementById("cardStatus").className   = "card-value green";
-    // Show arrived overlay (with slight delay so map updates first)
-    setTimeout(() => {
+    finalised = true;
+
+    if (wasLive) {
+      // Customer was watching live — show overlay on top of map
+      showMap();
       document.getElementById("arrivedOverlay").classList.add("show");
-    }, 800);
+    } else {
+      // Customer opened link after tech already arrived
+      showMessage(
+        "🛠️",
+        "Technician Has Arrived",
+        "Your technician is already at the service location and working on your request.",
+        "In Progress",
+        "green"
+      );
+    }
+
+    setStatus("arrived", "Technician is at your location");
+    document.getElementById("cardStatus").textContent = "In Progress";
+    document.getElementById("cardStatus").className   = "card-value green";
     return;
   }
 
-  // No coordinates yet (technician hasn't started moving)
- if (!data.Latitude || !data.Longitude ||
-    data.Latitude === 0 || data.Longitude === 0) {
-
-    setStatus("loading", "Waiting for technician to start travelling...");
-    document.getElementById("cardStatus").textContent = "En Route (starting...)";
-    document.getElementById("cardStatus").className = "card-value amber";
+  // ── COMPLETED (351580003): visit is done ─────────────────────
+  if (status === STATUS.COMPLETED) {
+    stopPolling();
+    finalised = true;
+    showMessage(
+      "✅",
+      "Visit Completed",
+      "Your service visit has been completed successfully. Thank you for choosing VNETIX Field Service.",
+      "Completed",
+      "green"
+    );
+    setStatus("completed", "This visit has been completed");
+    document.getElementById("cardStatus").textContent = "Completed";
+    document.getElementById("cardStatus").className   = "card-value green";
     return;
+  }
+
+  // ── REVISIT REQUESTED (351580001): show friendly end message ─
+  if (status === STATUS.REVISIT_REQUESTED) {
+    stopPolling();
+    finalised = true;
+    showMessage(
+      "🔄",
+      "Revisit Scheduled",
+      "A revisit has been requested for this service. Our team will contact you to schedule a new appointment.",
+      "Revisit Requested",
+      "grey"
+    );
+    setStatus("unavailable", "Revisit has been requested");
+    document.getElementById("cardStatus").textContent = "Revisit Requested";
+    document.getElementById("cardStatus").className   = "card-value amber";
+    return;
+  }
+
+  // ── ALL OTHER STATES (Inactive = 2, None = 477730001, unknown) ─
+  // Technician has not started yet, or visit is N/A
+  showMessage(
+    "⏳",
+    "Not Started Yet",
+    "Tracking will become available once your technician starts travelling to your location. Please check back soon.",
+    null,
+    null
+  );
+  setStatus("loading", "Waiting for technician to start travelling…");
+  document.getElementById("cardStatus").textContent = "Pending";
+  document.getElementById("cardStatus").className   = "card-value amber";
+  // Keep polling — tech may start soon
 }
-  // We have real coordinates — update map
+
+// ═══════════════════════════════════════════════════════════════
+//  TRAVELLING STATE — show dot on map
+// ═══════════════════════════════════════════════════════════════
+function handleTravelling(data) {
   const lat = parseFloat(data.Latitude);
-const lng = parseFloat(data.Longitude);
+  const lng = parseFloat(data.Longitude);
 
-  if (isNaN(lat) || isNaN(lng)) return;
+  // Coordinates not available yet (just started, no GPS fix)
+  if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+    showMap();
+    setStatus("loading", "Technician is on the way — getting GPS fix…");
+    document.getElementById("cardStatus").textContent = "En Route";
+    document.getElementById("cardStatus").className   = "card-value amber";
+    return;
+  }
 
-  lastLat = lat;
-  lastLng = lng;
+  // Show map and update marker
+  showMap();
 
-  // Place / move the technician marker
   if (techMarker) {
     techMarker.setLatLng([lat, lng]);
   } else {
@@ -372,7 +508,6 @@ const lng = parseFloat(data.Longitude);
       .bindPopup("<b>Technician Location</b><br/>Live position");
   }
 
-  // Pan to first fix
   if (!mapCentred) {
     map.setView([lat, lng], 15, { animate: true });
     mapCentred = true;
@@ -383,22 +518,37 @@ const lng = parseFloat(data.Longitude);
   setStatus("traveling", "Technician is on the way to you");
   document.getElementById("cardStatus").textContent = "En Route";
   document.getElementById("cardStatus").className   = "card-value blue";
-  document.getElementById("statusRight").textContent =
-    lat.toFixed(5) + ", " + lng.toFixed(5);
+  document.getElementById("statusRight").textContent = lat.toFixed(5) + ", " + lng.toFixed(5);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UNAVAILABLE (404 or no token)
+// ═══════════════════════════════════════════════════════════════
+function handleUnavailable() {
+  stopPolling();
+  finalised = true;
+  showMessage(
+    "🔗",
+    "Link Not Found",
+    "This tracking link is invalid or has expired. Please use the link provided in your service confirmation email.",
+    null,
+    null
+  );
+  setStatus("expired", "This tracking link is not valid");
+  document.getElementById("cardStatus").textContent = "Invalid Link";
+  document.getElementById("cardStatus").className   = "card-value red";
 }
 
 // ═══════════════════════════════════════════════════════════════
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════
 function setStatus(type, text) {
-  const bar  = document.getElementById("statusBar");
-  const span = document.getElementById("statusText");
-  bar.className  = "status-bar " + type;
-  span.textContent = text;
+  document.getElementById("statusBar").className  = "status-bar " + type;
+  document.getElementById("statusText").textContent = text;
 }
 
 function startPolling() {
-  fetchLocation();   // immediate first call
+  fetchLocation();
   pollTimer = setInterval(fetchLocation, CONFIG.pollIntervalMs);
 }
 
@@ -406,26 +556,22 @@ function stopPolling() {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
 }
 
-function showFatalError(msg) {
-  stopPolling();
-  setStatus("expired", msg);
-  document.getElementById("cardStatus").textContent = "Link Expired";
-  document.getElementById("cardStatus").className   = "card-value";
-  document.getElementById("cardStatus").style.color = "#dc2626";
-}
-
 // ═══════════════════════════════════════════════════════════════
-//  START
+//  BOOT
 // ═══════════════════════════════════════════════════════════════
-if (TOKEN) {
+if (!TOKEN) {
+  handleUnavailable();
+} else {
+  // Show map div initially hidden until we know status is Travelling
+  document.getElementById("map").style.display = "none";
   startPolling();
 }
 
-// Pause polling when page is hidden (mobile background), resume on foreground
+// Pause/resume polling when page goes to background/foreground
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible" && TOKEN && !checkedIn) {
+  if (document.visibilityState === "visible" && TOKEN && !finalised) {
     stopPolling();
-    startPolling(); // restart with immediate fetch
+    startPolling();
   } else if (document.visibilityState === "hidden") {
     stopPolling();
   }
