@@ -228,6 +228,45 @@
       fill: #ffffff;
       flex-shrink: 0;
     }
+
+    /* ── CUSTOMER LOCATION MARKER ────────────────────────────────
+       Static pin (no ripple/animation) showing the service address,
+       using the accent orange to visually differentiate it from
+       the navy technician marker.
+    ── */
+    .cust-pin {
+      width: 40px;
+      height: 50px;
+      position: relative;
+    }
+
+    .cust-pin-circle {
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #f2794a 0%, #e85d26 100%);
+      border: 3px solid #ffffff;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,.35);
+      position: relative; z-index: 1;
+      overflow: hidden;
+    }
+
+    .cust-pin-tail {
+      position: absolute;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left:  9px solid transparent;
+      border-right: 9px solid transparent;
+      border-top:   13px solid #e85d26;
+      margin-top: -3px;
+    }
+
+    .cust-pin-circle svg {
+      width: 20px; height: 20px;
+      fill: #ffffff;
+      flex-shrink: 0;
+    }
   </style>
 </head>
 <body>
@@ -272,6 +311,14 @@
   <div class="card">
     <div class="card-label">Work Order</div>
     <div class="card-value muted" id="cardWO">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Technician</div>
+    <div class="card-value muted" id="cardTechName">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Mobile</div>
+    <div class="card-value muted" id="cardTechMobile">—</div>
   </div>
 </div>
 
@@ -355,11 +402,33 @@ const techIcon = L.divIcon({
   popupAnchor:[0, -56]
 });
 
-let techMarker  = null;
-let mapCentred  = false;
-let pollTimer   = null;
-let finalised   = false;
-let wasLive     = false;
+// ── Customer location marker icon ──────────────────────────────
+// Simple "home/pin" glyph inside an orange circular badge, to
+// visually mark the service address on the map.
+const CUST_ICON_SVG =
+  '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+    '<path d="M12 2L2 10h3v10h6v-6h2v6h6V10h3L12 2z"/>' +
+  '</svg>';
+
+const custIcon = L.divIcon({
+  className: "",
+  html:
+    '<div class="cust-pin">' +
+      '<div class="cust-pin-circle">' + CUST_ICON_SVG + '</div>' +
+      '<div class="cust-pin-tail"></div>' +
+    '</div>',
+  iconSize:   [40, 50],
+  iconAnchor: [20, 50],
+  popupAnchor:[0, -52]
+});
+
+let techMarker    = null;
+let custMarker    = null;
+let custPlaced    = false;
+let mapCentred    = false;
+let pollTimer     = null;
+let finalised     = false;
+let wasLive       = false;
 
 // ═══════════════════════════════════════════════════════════════
 //  SHOW / HIDE MAP vs MESSAGE SCREEN
@@ -385,6 +454,25 @@ function showMessage(icon, title, text, badgeText, badgeClass) {
   } else {
     badge.style.display = "none";
   }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CUSTOMER LOCATION MARKER
+// ═══════════════════════════════════════════════════════════════
+function placeCustomerMarker(data) {
+  const custLat = parseFloat(data.CustomerLatitude);
+  const custLng = parseFloat(data.CustomerLongitude);
+
+  if (isNaN(custLat) || isNaN(custLng) || custLat === 0 || custLng === 0) return;
+
+  if (custMarker) {
+    custMarker.setLatLng([custLat, custLng]);
+  } else {
+    custMarker = L.marker([custLat, custLng], { icon: custIcon, zIndexOffset: 500 })
+      .addTo(map)
+      .bindPopup("<b>Service Location</b><br/>Customer address");
+  }
+  custPlaced = true;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -415,6 +503,13 @@ function processData(data) {
   const status = parseInt(data.Status, 10);
 
   if (data.workOrderName) document.getElementById("cardWO").textContent = data.workOrderName;
+
+  if (data.TechnicianName) {
+    document.getElementById("cardTechName").textContent = data.TechnicianName;
+  }
+  document.getElementById("cardTechMobile").textContent = data.TechnicianMobile || "—";
+
+  placeCustomerMarker(data);
 
   const now = new Date();
   const ts = data.lastUpdated ? new Date(data.lastUpdated) : now;
@@ -496,7 +591,11 @@ function handleTravelling(data) {
   }
 
   if (!mapCentred) {
-    map.setView([lat, lng], 15, { animate: true });
+    if (custPlaced && custMarker) {
+      map.fitBounds(L.latLngBounds([techMarker.getLatLng(), custMarker.getLatLng()]), { padding: [50, 50] });
+    } else {
+      map.setView([lat, lng], 15, { animate: true });
+    }
     mapCentred = true;
   } else {
     map.panTo([lat, lng], { animate: true, duration: 0.8 });
