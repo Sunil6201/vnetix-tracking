@@ -68,14 +68,14 @@
     .status-bar.expired     { background: #fee2e2; color: #b91c1c; }
 
     .status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-    .status-bar.traveling   .status-dot { background: #2563eb; animation: pulse 1.5s infinite; }
+    .status-bar.traveling   .status-dot { background: #2563eb; animation: statusPulse 1.5s infinite; }
     .status-bar.arrived     .status-dot { background: #16a34a; }
     .status-bar.completed   .status-dot { background: #16a34a; }
-    .status-bar.loading     .status-dot { background: #d97706; animation: pulse 1.5s infinite; }
+    .status-bar.loading     .status-dot { background: #d97706; animation: statusPulse 1.5s infinite; }
     .status-bar.unavailable .status-dot { background: #94a3b8; }
     .status-bar.expired     .status-dot { background: #dc2626; }
 
-    @keyframes pulse {
+    @keyframes statusPulse {
       0%, 100% { transform: scale(1); opacity: 1; }
       50%       { transform: scale(1.3); opacity: .7; }
     }
@@ -113,7 +113,7 @@
     .card-value.muted { color: var(--muted); font-weight: 500; font-size: 13px; }
     .card-value.red   { color: #dc2626; }
 
-    /* Full-page message screen (replaces map for non-travelling states) */
+    /* Full-page message screen */
     .msg-screen {
       display: none;
       flex-direction: column;
@@ -138,7 +138,7 @@
     .msg-badge.green { background: #dcfce7; color: #15803d; }
     .msg-badge.grey  { background: #e2e8f0; color: #475569; }
 
-    /* Arrived overlay (shown on top of map when technician arrives mid-session) */
+    /* Arrived overlay */
     .overlay {
       display: none;
       position: fixed; inset: 0;
@@ -178,17 +178,55 @@
       padding: 10px 16px 18px;
     }
 
-    /* Leaflet tech marker */
+    /* ── TECHNICIAN MAP MARKER ───────────────────────────────────
+       Replaces the plain blue dot.
+       Shape: circular badge (dark navy, white border, ripple glow)
+       with a person/hard-hat SVG icon inside, sitting on a
+       teardrop tail — clearly a "field worker" pin.
+    ── */
     @keyframes ripple {
-      0%   { box-shadow: 0 0 0 0 rgba(37,99,235,.6); }
-      70%  { box-shadow: 0 0 0 14px rgba(37,99,235,0); }
-      100% { box-shadow: 0 0 0 0 rgba(37,99,235,0); }
+      0%   { box-shadow: 0 0 0 0    rgba(37,99,235,.65); }
+      70%  { box-shadow: 0 0 0 16px rgba(37,99,235,0);   }
+      100% { box-shadow: 0 0 0 0    rgba(37,99,235,0);   }
     }
-    .tech-dot {
-      width: 18px; height: 18px; border-radius: 50%;
-      background: #2563eb; border: 3px solid #fff;
-      box-shadow: 0 2px 8px rgba(0,0,0,.3);
+
+    .tech-pin {
+      width: 44px;
+      height: 54px;
+      position: relative;
+      /* no background here — all decoration is in children */
+    }
+
+    .tech-pin-circle {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, #1a3a5c 0%, #0f2340 100%);
+      border: 3px solid #ffffff;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 10px rgba(0,0,0,.35);
       animation: ripple 2s ease-out infinite;
+      position: relative; z-index: 1;
+      overflow: hidden;
+    }
+
+    /* Teardrop tail below the circle */
+    .tech-pin-tail {
+      position: absolute;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left:  10px solid transparent;
+      border-right: 10px solid transparent;
+      border-top:   14px solid #0f2340;
+      /* nudge tail flush against circle */
+      margin-top: -3px;
+    }
+
+    /* Technician person SVG inside circle */
+    .tech-pin-circle svg {
+      width: 24px; height: 24px;
+      fill: #ffffff;
+      flex-shrink: 0;
     }
   </style>
 </head>
@@ -210,10 +248,10 @@
   <span class="status-right" id="statusRight"></span>
 </div>
 
-<!-- Map (visible only when Travelling) -->
+<!-- Map -->
 <div id="map"></div>
 
-<!-- Full-page message screen (shown instead of map for non-travelling states) -->
+<!-- Full-page message screen -->
 <div class="msg-screen" id="msgScreen">
   <div class="msg-icon"  id="msgIcon">⏳</div>
   <div class="msg-title" id="msgTitle">Please wait</div>
@@ -241,7 +279,7 @@
   Powered by VNETIX Field Service
 </div>
 
-<!-- Arrived overlay (shown on top of live map when tech arrives while customer is watching) -->
+<!-- Arrived overlay -->
 <div class="overlay" id="arrivedOverlay">
   <div class="overlay-card">
     <div class="overlay-icon">✅</div>
@@ -267,24 +305,23 @@ const CONFIG = {
   defaultZoom: 13
 };
 
-// ── Status option-set values ──────────────────────────────────
 const STATUS = {
   TRAVELLING:        1,
   INACTIVE:          2,
-  IN_PROGRESS:       351580002,   // technician already at site
+  IN_PROGRESS:       351580002,
   REVISIT_REQUESTED: 351580001,
   COMPLETED:         351580003,
   NONE:              477730001
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  READ TOKEN FROM URL
+//  TOKEN
 // ═══════════════════════════════════════════════════════════════
 const params = new URLSearchParams(window.location.search);
 const TOKEN  = params.get("token") || "";
 
 // ═══════════════════════════════════════════════════════════════
-//  MAP SETUP (always initialise — hidden until Travelling)
+//  MAP
 // ═══════════════════════════════════════════════════════════════
 const map = L.map("map", {
   center: CONFIG.defaultCenter,
@@ -298,24 +335,44 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   maxZoom: 19
 }).addTo(map);
 
+// ── Technician marker icon ─────────────────────────────────────
+// Person-with-hard-hat SVG (Material Design "engineering" person).
+// Swapped inside the navy circular badge pin defined in CSS above.
+const TECH_ICON_SVG =
+  '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
+    // Hard hat
+    '<path d="M12 2C9.5 2 7.2 3.2 5.8 5.1L5 5.5V9h14V5.5l-.8-.4C16.8 3.2 14.5 2 12 2z"/>' +
+    // Head
+    '<circle cx="12" cy="8" r="3"/>' +
+    // Body / shoulders
+    '<path d="M12 13c-4 0-7 2-7 4v1h14v-1c0-2-3-4-7-4z"/>' +
+    // Tool / wrench accent
+    '<path d="M17.5 11.5l1.5 1.5-1 1-1.5-1.5 1-1z" opacity=".7"/>' +
+  '</svg>';
+
 const techIcon = L.divIcon({
-  className: "",
-  html: '<div class="tech-dot"></div>',
-  iconSize: [18, 18],
-  iconAnchor: [9, 9]
+  className: "",   // no default leaflet styles
+  html:
+    '<div class="tech-pin">' +
+      '<div class="tech-pin-circle">' + TECH_ICON_SVG + '</div>' +
+      '<div class="tech-pin-tail"></div>' +
+    '</div>',
+  iconSize:   [44, 54],
+  iconAnchor: [22, 54],   // tip of tail = ground anchor point
+  popupAnchor:[0, -56]
 });
 
 let techMarker  = null;
 let mapCentred  = false;
 let pollTimer   = null;
-let finalised   = false;   // true once we reach a terminal state (no more polling)
-let wasLive     = false;   // true if the customer saw live tracking before tech arrived
+let finalised   = false;
+let wasLive     = false;
 
 // ═══════════════════════════════════════════════════════════════
 //  SHOW / HIDE MAP vs MESSAGE SCREEN
 // ═══════════════════════════════════════════════════════════════
 function showMap() {
-  document.getElementById("map").style.display       = "";
+  document.getElementById("map").style.display = "";
   document.getElementById("msgScreen").classList.remove("show");
   setTimeout(() => { if (map) map.invalidateSize(); }, 150);
 }
@@ -329,8 +386,8 @@ function showMessage(icon, title, text, badgeText, badgeClass) {
   document.getElementById("msgText").textContent  = text;
   const badge = document.getElementById("msgBadge");
   if (badgeText) {
-    badge.textContent  = badgeText;
-    badge.className    = "msg-badge " + (badgeClass || "grey");
+    badge.textContent   = badgeText;
+    badge.className     = "msg-badge " + (badgeClass || "grey");
     badge.style.display = "inline-block";
   } else {
     badge.style.display = "none";
@@ -338,28 +395,20 @@ function showMessage(icon, title, text, badgeText, badgeClass) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  FETCH FROM AZURE FUNCTION
+//  FETCH
 // ═══════════════════════════════════════════════════════════════
 async function fetchLocation() {
   if (!TOKEN || finalised) return;
-
   try {
     const url = CONFIG.azureFunctionUrl + "?token=" + encodeURIComponent(TOKEN);
     const res  = await fetch(url, { cache: "no-store" });
-
     if (!res.ok) {
-      if (res.status === 404) {
-        handleUnavailable();
-        return;
-      }
-      // Transient error — keep polling
+      if (res.status === 404) { handleUnavailable(); return; }
       setStatus("loading", "Retrying connection…");
       return;
     }
-
     const data = await res.json();
     processData(data);
-
   } catch (err) {
     console.warn("Tracking fetch error:", err);
     setStatus("loading", "Connection issue — retrying…");
@@ -367,137 +416,82 @@ async function fetchLocation() {
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  PROCESS DATA — main status switch
-//
-//  Azure Function returns:
-//    { Latitude, Longitude, Status, TravelDistance, workOrderName, lastUpdated }
-//
-//  Status values:
-//    1           → Travelling    → show live map
-//    351580002   → In Progress   → technician at site / working
-//    351580003   → Completed     → visit fully done
-//    351580001   → Revisit Req.  → treated as completed/ended
-//    2           → Inactive      → not started yet / N/A
-//    477730001   → None          → N/A
+//  PROCESS DATA
 // ═══════════════════════════════════════════════════════════════
 function processData(data) {
   const status = parseInt(data.Status, 10);
 
-  // Update work order name and timestamp if present
-  if (data.workOrderName) {
-    document.getElementById("cardWO").textContent = data.workOrderName;
-  }
-  if (data.lastUpdated) {
-    const t = new Date(data.lastUpdated);
-    document.getElementById("cardUpdated").textContent = t.toLocaleTimeString("en-IN", {
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
-    });
-  } else {
-    // Use current time as "last updated"
-    document.getElementById("cardUpdated").textContent = new Date().toLocaleTimeString("en-IN", {
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
-    });
-  }
+  if (data.workOrderName) document.getElementById("cardWO").textContent = data.workOrderName;
 
-  // ── TRAVELLING (Status = 1): show live map ───────────────────
-  if (status === STATUS.TRAVELLING) {
-    wasLive = true;
-    handleTravelling(data);
-    return;
-  }
+  const now = new Date();
+  const ts = data.lastUpdated ? new Date(data.lastUpdated) : now;
+  document.getElementById("cardUpdated").textContent = ts.toLocaleTimeString("en-IN", {
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true
+  });
 
-  // ── IN PROGRESS (351580002): tech has arrived and is working ─
+  if (status === STATUS.TRAVELLING) { wasLive = true; handleTravelling(data); return; }
+
   if (status === STATUS.IN_PROGRESS) {
-    stopPolling();
-    finalised = true;
-
+    stopPolling(); finalised = true;
     if (wasLive) {
-      // Customer was watching live — show overlay on top of map
       showMap();
       document.getElementById("arrivedOverlay").classList.add("show");
     } else {
-      // Customer opened link after tech already arrived
-      showMessage(
-        "🛠️",
-        "Technician Has Arrived",
+      showMessage("🛠️","Technician Has Arrived",
         "Your technician is already at the service location and working on your request.",
-        "In Progress",
-        "green"
-      );
+        "In Progress","green");
     }
-
-    setStatus("arrived", "Technician is at your location");
+    setStatus("arrived","Technician is at your location");
     document.getElementById("cardStatus").textContent = "In Progress";
     document.getElementById("cardStatus").className   = "card-value green";
     return;
   }
 
-  // ── COMPLETED (351580003): visit is done ─────────────────────
   if (status === STATUS.COMPLETED) {
-    stopPolling();
-    finalised = true;
-    showMessage(
-      "✅",
-      "Visit Completed",
+    stopPolling(); finalised = true;
+    showMessage("✅","Visit Completed",
       "Your service visit has been completed successfully. Thank you for choosing VNETIX Field Service.",
-      "Completed",
-      "green"
-    );
-    setStatus("completed", "This visit has been completed");
+      "Completed","green");
+    setStatus("completed","This visit has been completed");
     document.getElementById("cardStatus").textContent = "Completed";
     document.getElementById("cardStatus").className   = "card-value green";
     return;
   }
 
-  // ── REVISIT REQUESTED (351580001): show friendly end message ─
   if (status === STATUS.REVISIT_REQUESTED) {
-    stopPolling();
-    finalised = true;
-    showMessage(
-      "🔄",
-      "Revisit Scheduled",
+    stopPolling(); finalised = true;
+    showMessage("🔄","Revisit Scheduled",
       "A revisit has been requested for this service. Our team will contact you to schedule a new appointment.",
-      "Revisit Requested",
-      "grey"
-    );
-    setStatus("unavailable", "Revisit has been requested");
+      "Revisit Requested","grey");
+    setStatus("unavailable","Revisit has been requested");
     document.getElementById("cardStatus").textContent = "Revisit Requested";
     document.getElementById("cardStatus").className   = "card-value amber";
     return;
   }
 
-  // ── ALL OTHER STATES (Inactive = 2, None = 477730001, unknown) ─
-  // Technician has not started yet, or visit is N/A
-  showMessage(
-    "⏳",
-    "Not Started Yet",
+  showMessage("⏳","Not Started Yet",
     "Tracking will become available once your technician starts travelling to your location. Please check back soon.",
-    null,
-    null
-  );
-  setStatus("loading", "Waiting for technician to start travelling…");
+    null,null);
+  setStatus("loading","Waiting for technician to start travelling…");
   document.getElementById("cardStatus").textContent = "Pending";
   document.getElementById("cardStatus").className   = "card-value amber";
-  // Keep polling — tech may start soon
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  TRAVELLING STATE — show dot on map
+//  TRAVELLING
 // ═══════════════════════════════════════════════════════════════
 function handleTravelling(data) {
   const lat = parseFloat(data.Latitude);
   const lng = parseFloat(data.Longitude);
 
-  // Coordinates not available yet (just started, no GPS fix)
   if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
     showMap();
-    setStatus("loading", "Technician is on the way — getting GPS fix…");
+    setStatus("loading","Technician is on the way — getting GPS fix…");
     document.getElementById("cardStatus").textContent = "En Route";
     document.getElementById("cardStatus").className   = "card-value amber";
     return;
   }
 
-  // Show map and update marker
   showMap();
 
   if (techMarker) {
@@ -505,7 +499,7 @@ function handleTravelling(data) {
   } else {
     techMarker = L.marker([lat, lng], { icon: techIcon, zIndexOffset: 1000 })
       .addTo(map)
-      .bindPopup("<b>Technician Location</b><br/>Live position");
+      .bindPopup("<b>Your Technician</b><br/>Live position");
   }
 
   if (!mapCentred) {
@@ -515,26 +509,21 @@ function handleTravelling(data) {
     map.panTo([lat, lng], { animate: true, duration: 0.8 });
   }
 
-  setStatus("traveling", "Technician is on the way to you");
+  setStatus("traveling","Technician is on the way to you");
   document.getElementById("cardStatus").textContent = "En Route";
   document.getElementById("cardStatus").className   = "card-value blue";
   document.getElementById("statusRight").textContent = lat.toFixed(5) + ", " + lng.toFixed(5);
 }
 
 // ═══════════════════════════════════════════════════════════════
-//  UNAVAILABLE (404 or no token)
+//  UNAVAILABLE
 // ═══════════════════════════════════════════════════════════════
 function handleUnavailable() {
-  stopPolling();
-  finalised = true;
-  showMessage(
-    "🔗",
-    "Link Not Found",
+  stopPolling(); finalised = true;
+  showMessage("🔗","Link Not Found",
     "This tracking link is invalid or has expired. Please use the link provided in your service confirmation email.",
-    null,
-    null
-  );
-  setStatus("expired", "This tracking link is not valid");
+    null,null);
+  setStatus("expired","This tracking link is not valid");
   document.getElementById("cardStatus").textContent = "Invalid Link";
   document.getElementById("cardStatus").className   = "card-value red";
 }
@@ -543,7 +532,7 @@ function handleUnavailable() {
 //  HELPERS
 // ═══════════════════════════════════════════════════════════════
 function setStatus(type, text) {
-  document.getElementById("statusBar").className  = "status-bar " + type;
+  document.getElementById("statusBar").className    = "status-bar " + type;
   document.getElementById("statusText").textContent = text;
 }
 
@@ -562,16 +551,13 @@ function stopPolling() {
 if (!TOKEN) {
   handleUnavailable();
 } else {
-  // Show map div initially hidden until we know status is Travelling
   document.getElementById("map").style.display = "none";
   startPolling();
 }
 
-// Pause/resume polling when page goes to background/foreground
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && TOKEN && !finalised) {
-    stopPolling();
-    startPolling();
+    stopPolling(); startPolling();
   } else if (document.visibilityState === "hidden") {
     stopPolling();
   }
