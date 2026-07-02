@@ -229,10 +229,11 @@
       flex-shrink: 0;
     }
 
-    /* ── CUSTOMER LOCATION MARKER ────────────────────────────────
+    /* ── CUSTOMER / COMPANY LOCATION MARKER ──────────────────────
        Static pin (no ripple/animation) showing the service address,
        using the accent orange to visually differentiate it from
-       the navy technician marker.
+       the navy technician marker. Icon is a generic building glyph
+       so it reads as "company / customer premises", not a home.
     ── */
     .cust-pin {
       width: 40px;
@@ -320,6 +321,10 @@
     <div class="card-label">Mobile</div>
     <div class="card-value muted" id="cardTechMobile">—</div>
   </div>
+  <div class="card">
+    <div class="card-label">Distance Remaining</div>
+    <div class="card-value blue" id="cardRouteDistance">—</div>
+  </div>
 </div>
 
 <div class="footer">
@@ -349,7 +354,9 @@ const CONFIG = {
   azureFunctionUrl: "https://fieldservicetracking-hbgwhvehhkhfdzhq.southindia-01.azurewebsites.net/api/GetTracking",
   pollIntervalMs: 30000,
   defaultCenter: [17.6868, 83.2185],
-  defaultZoom: 13
+  defaultZoom: 13,
+  // Free public OSRM demo routing server — no API key required.
+  osrmUrl: "https://router.project-osrm.org/route/v1/driving/"
 };
 
 const STATUS = {
@@ -402,12 +409,12 @@ const techIcon = L.divIcon({
   popupAnchor:[0, -56]
 });
 
-// ── Customer location marker icon ──────────────────────────────
-// Simple "home/pin" glyph inside an orange circular badge, to
-// visually mark the service address on the map.
+// ── Customer / company location marker icon ────────────────────
+// Generic building glyph — represents customer premises or a
+// company office, not specifically a "home".
 const CUST_ICON_SVG =
   '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">' +
-    '<path d="M12 2L2 10h3v10h6v-6h2v6h6V10h3L12 2z"/>' +
+    '<path d="M4 21V3h9v4h7v14H4zm2-2h5v-2H6v2zm0-4h5v-2H6v2zm0-4h5V9H6v2zm7 8h5v-2h-5v2zm0-4h5v-2h-5v2zm0-4h5V9h-5v2z"/>' +
   '</svg>';
 
 const custIcon = L.divIcon({
@@ -422,13 +429,19 @@ const custIcon = L.divIcon({
   popupAnchor:[0, -52]
 });
 
-let techMarker    = null;
-let custMarker    = null;
-let custPlaced    = false;
-let mapCentred    = false;
-let pollTimer     = null;
-let finalised     = false;
-let wasLive       = false;
+let techMarker      = null;
+let custMarker      = null;
+let custPlaced      = false;
+let mapCentred      = false;
+let pollTimer       = null;
+let finalised       = false;
+let wasLive         = false;
+
+// ── Route line state ────────────────────────────────────────────
+let routeLine         = null;
+let lastRouteTechLat  = null;
+let lastRouteTechLng  = null;
+let routeFetchBusy    = false;
 
 // ═══════════════════════════════════════════════════════════════
 //  SHOW / HIDE MAP vs MESSAGE SCREEN
@@ -473,6 +486,69 @@ function placeCustomerMarker(data) {
       .bindPopup("<b>Service Location</b><br/>Customer address");
   }
   custPlaced = true;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  ROUTE LINE (shortest path, technician → customer)
+//  Uses the free OSRM public routing server. Recalculated on every
+//  poll cycle where the technician has moved meaningfully, so the
+//  line automatically shortens as he nears the customer, lengthens
+//  if he moves away, and reshapes if he takes a different road.
+// ═══════════════════════════════════════════════════════════════
+async function updateRoute(techLat, techLng, custLat, custLng) {
+  if (routeFetchBusy) return;
+
+  // Skip re-fetching if technician hasn't moved meaningfully (~20m) since last route calc
+  if (lastRouteTechLat !== null && routeLine) {
+    const moved =
+      Math.abs(lastRouteTechLat - techLat) > 0.0002 ||
+      Math.abs(lastRouteTechLng - techLng) > 0.0002;
+    if (!moved) return;
+  }
+
+  routeFetchBusy = true;
+  try {
+    const url = `${CONFIG.osrmUrl}${techLng},${techLat};${custLng},${custLat}?overview=full&geometries=geojson`;
+    const res = await fetch(url);
+    if (!res.ok) { routeFetchBusy = false; return; }
+    const data = await res.json();
+    if (!data.routes || !data.routes.length) { routeFetchBusy = false; return; }
+
+    const coords = data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]);
+    const distanceKm = (data.routes[0].distance / 1000).toFixed(2);
+
+    if (routeLine) {
+      routeLine.setLatLngs(coords);
+    } else {
+      routeLine = L.polyline(coords, {
+        color: "#2563eb",
+        weight: 5,
+        opacity: 0.85,
+        lineCap: "round",
+        lineJoin: "round"
+      }).addTo(map);
+      routeLine.bringToBack();
+    }
+
+    document.getElementById("cardRouteDistance").textContent = distanceKm + " km";
+
+    lastRouteTechLat = techLat;
+    lastRouteTechLng = techLng;
+  } catch (err) {
+    console.warn("Routing error:", err);
+  } finally {
+    routeFetchBusy = false;
+  }
+}
+
+function clearRoute() {
+  if (routeLine) {
+    map.removeLayer(routeLine);
+    routeLine = null;
+  }
+  lastRouteTechLat = null;
+  lastRouteTechLng = null;
+  document.getElementById("cardRouteDistance").textContent = "—";
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -521,6 +597,7 @@ function processData(data) {
 
   if (status === STATUS.IN_PROGRESS) {
     stopPolling(); finalised = true;
+    clearRoute();
     if (wasLive) {
       showMap();
       document.getElementById("arrivedOverlay").classList.add("show");
@@ -537,6 +614,7 @@ function processData(data) {
 
   if (status === STATUS.COMPLETED) {
     stopPolling(); finalised = true;
+    clearRoute();
     showMessage("✅","Visit Completed",
       "Your service visit has been completed successfully. Thank you for choosing VNETIX Field Service.",
       "Completed","green");
@@ -548,6 +626,7 @@ function processData(data) {
 
   if (status === STATUS.REVISIT_REQUESTED) {
     stopPolling(); finalised = true;
+    clearRoute();
     showMessage("🔄","Revisit Scheduled",
       "A revisit has been requested for this service. Our team will contact you to schedule a new appointment.",
       "Revisit Requested","grey");
@@ -601,6 +680,13 @@ function handleTravelling(data) {
     map.panTo([lat, lng], { animate: true, duration: 0.8 });
   }
 
+  // Recalculate the shortest route from technician to customer, if
+  // the customer location is known.
+  if (custPlaced && custMarker) {
+    const custLatLng = custMarker.getLatLng();
+    updateRoute(lat, lng, custLatLng.lat, custLatLng.lng);
+  }
+
   setStatus("traveling","Technician is on the way to you");
   document.getElementById("cardStatus").textContent = "En Route";
   document.getElementById("cardStatus").className   = "card-value blue";
@@ -612,6 +698,7 @@ function handleTravelling(data) {
 // ═══════════════════════════════════════════════════════════════
 function handleUnavailable() {
   stopPolling(); finalised = true;
+  clearRoute();
   showMessage("🔗","Link Not Found",
     "This tracking link is invalid or has expired. Please use the link provided in your service confirmation email.",
     null,null);
